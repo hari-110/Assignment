@@ -80,6 +80,10 @@ python segmentation/fcn_resnet_finetuning.py
 	- Inverse-frequency class weighting for imbalance
 	- Final metrics: mAP, IoU, Pixel Accuracy, F1, FPS
 	
+## Reference
+	- BDD100K: A Diverse Driving Dataset for Heterogeneous Multitask Learning
+	- https://bair.berkeley.edu/blog/2018/05/30/bdd/
+	
 
 	
 
