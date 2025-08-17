@@ -1,12 +1,11 @@
 """
-Faster-RCNN Baseline modle finetuning
--------------------------------------
-This script finetune the Faster-RCNN model for BDD100k dataset
+faster_rcnn_finetune.py
+--------------------------------------------------
+- Fine-tune Faster-RCNN on BDD100K dataset.
+- Albumentations augmentations for small objects
+- Calculate Inverse frequency class weights 
+- Save the best model for final metrics evaluations
 
-Outputs:
-- COCO evaluation (mAP, AP50, AP50:90)
-- Extra metrics (Precision, Recall, F1-score, IoU, FPS)
-- Comparison table
 """
 
 import os
@@ -17,13 +16,21 @@ import torchvision
 import numpy as np
 from PIL import Image
 from torch.utils.data import Dataset, DataLoader
-from torchvision import transforms
 from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
+import albumentations as A
+from albumentations.pytorch import ToTensorV2
+from collections import Counter
+from torch.nn import CrossEntropyLoss
+
 
 
 # Dataset Loader
 class COCODataset(Dataset):
+    """
+    Dataset loader for COCO or BDD100K JSON annotations.
+    Converts BDD100K format to COCO.
+    """
     def __init__(self, img_dir, ann_file, transform=None):
         self.img_dir = img_dir
         self.transform = transform
@@ -39,6 +46,9 @@ class COCODataset(Dataset):
         self.image_ids = list(self.coco.imgs.keys())
 
     def _bdd_to_coco(self, bdd_data):
+        """
+        Converts BDD100K labels to COCO-style JSON dict.
+        """
         images, annotations, categories = [], [], {}
         ann_id = 1
         for img_id, item in enumerate(bdd_data):
@@ -75,6 +85,11 @@ class COCODataset(Dataset):
         }
 
     def __getitem__(self, idx):
+        """
+        Returns:
+        - img_path: path to image file
+        - img_id: COCO image ID
+        """
         img_id = self.image_ids[idx]
         img_info = self.coco.loadImgs(img_id)[0]
         img_path = os.path.join(self.img_dir, img_info['file_name'])
@@ -87,7 +102,7 @@ class COCODataset(Dataset):
         for ann in anns:
             x, y, w, h = ann['bbox']
             if w <= 0 or h <= 0:
-                continue  # skip invalid boxes
+                continue  
             boxes.append([x, y, x + w, y + h])  # convert to [xmin, ymin, xmax, ymax]
             labels.append(ann['category_id'])
 
@@ -101,33 +116,39 @@ class COCODataset(Dataset):
         target = {"boxes": boxes, "labels": labels, "image_id": torch.tensor([img_id])}
 
         if self.transform:
-            image = self.transform(image)
+            transformed = self.transform(image=np.array(image))
+            image = transformed['image']
 
         return image, target
+    
 
     def __len__(self):
         return len(self.image_ids)
 
+
 # Validation Loss Function
 def compute_validation_loss(model, dataloader, device):
-    model.train() 
+    model.train()
     total_loss = 0.0
     with torch.no_grad():
         for images, targets in dataloader:
             images = [img.to(device) for img in images]
             targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
-
-            # Forward pass to get loss dict
             loss_dict = model(images, targets)
-
-            # Sum individual losses (classification + box regression)
             loss = sum(loss_dict.values())
-        total_loss += loss.item()
-
+            total_loss += loss.item()
     return total_loss / len(dataloader)
+
 
 # Evaluation Metrics
 def evaluate_model(model, dataloader, coco_gt, device):
+    """
+    Evaluates predictions using COCO API and computes extra metrics:
+    - mAP@0.5
+    - mAP@[0.5:0.9]
+    - Precision, Recall, F1-score
+    - IoU
+    """
     model.eval()
     results = []
     total_time = 0
@@ -163,7 +184,7 @@ def evaluate_model(model, dataloader, coco_gt, device):
                     w, h = x2 - x1, y2 - y1
                     results.append({
                         "image_id": img_id,
-                        "category_id": int(label),
+                        "category_id": int(label)+1,
                         "bbox": [float(x1), float(y1), float(w), float(h)],
                         "score": float(score)
                     })
@@ -214,16 +235,34 @@ def evaluate_model(model, dataloader, coco_gt, device):
         "FPS": fps
     }
 
+
 # Training Loop
 def train_and_finetune(img_dir_train, ann_file_train, img_dir_val, ann_file_val, num_epochs=5, lr=0.005):
+    """
+    Apply Augmentations and Normalization
+    Calculate Inverse frequency class weights 
+    Save the best model for final metrics evaluations
+    """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    transform = transforms.Compose([
-        transforms.ToTensor()
+    # Albumentations transforms
+    train_transform = A.Compose([
+        A.HorizontalFlip(p=0.5),
+        A.RandomBrightnessContrast(p=0.3),
+        A.ShiftScaleRotate(shift_limit=0.05, scale_limit=0.1, rotate_limit=10, p=0.5),
+        A.MotionBlur(p=0.2),
+        A.ColorJitter(p=0.3),
+        A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+        ToTensorV2()
     ])
 
-    train_dataset = COCODataset(img_dir_train, ann_file_train, transform)
-    val_dataset = COCODataset(img_dir_val, ann_file_val, transform)
+    val_transform = A.Compose([
+        A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+        ToTensorV2()
+    ])
+
+    train_dataset = COCODataset(img_dir_train, ann_file_train, transform=train_transform)
+    val_dataset   = COCODataset(img_dir_val, ann_file_val, transform=val_transform)
 
     train_loader = DataLoader(train_dataset, batch_size=10, shuffle=True, collate_fn=lambda x: tuple(zip(*x)))
     val_loader = DataLoader(val_dataset, batch_size=10, shuffle=False, collate_fn=lambda x: tuple(zip(*x)))
@@ -234,15 +273,24 @@ def train_and_finetune(img_dir_train, ann_file_train, img_dir_val, ann_file_val,
     model.roi_heads.box_predictor = torchvision.models.detection.faster_rcnn.FastRCNNPredictor(in_features, num_classes)
     model.to(device)
 
+    # Inverse frequency class weights
+    label_counts = Counter()
+    for _, tgt in train_dataset:
+        label_counts.update(tgt["labels"].tolist())
+    freqs = np.array([label_counts.get(c, 1) for c in range(num_classes)])
+    class_weights = torch.tensor(1.0 / freqs, dtype=torch.float32)
+    class_weights = class_weights / class_weights.sum() * num_classes
+    class_weights = class_weights.to(device)
+    model.roi_heads.box_predictor.loss_cls = CrossEntropyLoss(weight=class_weights)
+
     params = [p for p in model.parameters() if p.requires_grad]
-    # optimizer = torch.optim.SGD(params, lr=lr, momentum=0.9, weight_decay=0.0005)
     optimizer = torch.optim.AdamW(params, lr=lr, weight_decay=0.0005)
-    
 
     best_val_loss = float("inf")
-    best_model_path = "best_model.pth"
+    best_model_path = "best_faster_rcnn_model.pth"
 
     for epoch in range(num_epochs):
+        print(f"Epoch : {epoch}")
         model.train()
         train_loss = 0.0
         for images, targets in train_loader:
@@ -257,15 +305,14 @@ def train_and_finetune(img_dir_train, ann_file_train, img_dir_val, ann_file_val,
 
         avg_train_loss = train_loss / len(train_loader)
         val_loss = compute_validation_loss(model, val_loader, device)
-        print(f"Epoch {epoch+1}/{num_epochs} - Train Loss: {avg_train_loss:.4f} - Validation Loss: {val_loss:.4f}")
+        print(f"Epoch {epoch}/{num_epochs} - Train Loss: {avg_train_loss:.4f} - Validation Loss: {val_loss:.4f}")
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             torch.save(model.state_dict(), best_model_path)
             print("Best model saved.")
 
-
-    # Post-Training Full Evaluation
+    # Full Evaluation
     print("\nLoading best model for final evaluation...")
     model.load_state_dict(torch.load(best_model_path))
     metrics = evaluate_model(model, val_loader, val_dataset.coco, device)
@@ -273,12 +320,15 @@ def train_and_finetune(img_dir_train, ann_file_train, img_dir_val, ann_file_val,
     for k, v in metrics.items():
         print(f"{k}: {v:.4f}")
 
+
 if __name__ == "__main__":
     train_and_finetune(
-        img_dir_train="~/bdd100k_images_100k/bdd100k/images/100k/train_20k",
-        ann_file_train="~/bdd100k_labels_release/bdd100k/labels/bdd100k_labels_images_train_20k.json",
-        img_dir_val="~/bdd100k_images_100k/bdd100k/images/100k/val_2k",
-        ann_file_val="~/bdd100k_labels_release/bdd100k/labels/bdd100k_labels_images_val_2k.json",
+        img_dir_train="~/bdd100k_images_100k/bdd100k/images/100k/train_40k",
+        ann_file_train="~/bdd100k_labels_release/bdd100k/labels/bdd100k_labels_images_train_40k.json",
+        img_dir_val="~/bdd100k_images_100k/bdd100k/images/100k/val_8k",
+        ann_file_val="~/bdd100k_labels_release/bdd100k/labels/bdd100k_labels_images_val_8k.json",
         num_epochs=10,
         lr=0.0001
     )
+
+ 

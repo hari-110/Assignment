@@ -9,7 +9,7 @@ This script benchmarks multiple object detection models:
 Outputs:
 - COCO evaluation (mAP, AP50, AP50:90)
 - Extra metrics (Precision, Recall, F1-score, IoU, FPS)
-- Comparison table
+- Comparison table and Plots
 """
 
 import os
@@ -31,7 +31,7 @@ from tabulate import tabulate
 class COCODataset(Dataset):
     """
     Dataset loader for COCO or BDD100K JSON annotations.
-    Converts BDD100K format to COCO if needed.
+    Converts BDD100K format to COCO.
     """
     def __init__(self, img_dir, ann_file):
         self.img_dir = img_dir
@@ -175,10 +175,10 @@ def evaluate_predictions(coco_gt, predictions):
 
 
 
-# Model Runner Wrappers
+# MobileNet-SSD, Faster R-CNN Models
 def run_torchvision_model(model, dataloader, device):
     """
-    Runs TorchVision detection models (MobileNet-SSD, Faster R-CNN)
+    Runs  detection models (MobileNet-SSD, Faster R-CNN)
     """
     model.eval() 
     predictions = []
@@ -209,7 +209,7 @@ def run_torchvision_model(model, dataloader, device):
     fps = len(dataloader.dataset) / total_time
     return predictions, fps
 
-
+# Yolov8 Model
 def run_yolov8_model(model_name, dataloader, device):
     """
     Runs YOLOv8 model from Ultralytics Hub
@@ -242,7 +242,7 @@ def run_yolov8_model(model_name, dataloader, device):
     return predictions, fps
 
 
-# Main Benchmark Runner
+# Model Benchmark 
 def run_benchmark(img_dir, ann_file):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     dataset = COCODataset(img_dir, ann_file)
@@ -273,6 +273,23 @@ def run_benchmark(img_dir, ann_file):
     headers=["Model", "mAP@0.5", "mAP@[0.5:0.9]", "Precision", "Recall", "F1", "IoU", "FPS"],
     floatfmt=".4f"
 ))
+
+    # Plot bar chart
+    labels = [row[0] for row in results_table]
+    map50 = [row[1] for row in results_table]
+    fps_vals = [row[3] for row in results_table]
+
+    plt.figure()
+    plt.bar(labels, map50)
+    plt.ylabel("mAP@0.5")
+    plt.title("Model Comparison - mAP@0.5")
+    plt.show()
+
+    plt.figure()
+    plt.bar(labels, fps_vals)
+    plt.ylabel("FPS")
+    plt.title("Model Comparison - FPS")
+    plt.show()
 
 
 if __name__ == "__main__":
