@@ -2,29 +2,32 @@
 
 This repository benchmarks and fine-tune the good model for **object detection** and **semantic segmentation** on the BDD100K dataset.
 
+---
+
 ## Repository Structure
 
 - `data_exploration.ipynb`  
   Exploratory Data Analysis (EDA) for BDD100K:
   - Weather distribution  
   - Time-of-day distribution  
-  - Object size distribution (bbox -area/aspect ratio)  
-  - Occlusion and truncation stats  
+  - Object size distribution (bbox area/aspect ratio)  
+  - Occlusion and truncation statistics  
   - Scene attributes and class imbalance analysis  
   - Weather vs Time-of-day distribution 
 
 - `detection/`  
   - **Baseline scripts**: MobileNet-SSD, Faster R-CNN, YOLOv8  
-  - **Multi-model benchmark**: Evaluates mAP@0.5, mAP@[0.5:0.9], Precision, Recall, F1, IoU, FPS  
+  - **Multi-model benchmark**: Evaluates mAP@0.5, mAP@[0.5:0.95], Precision, Recall, F1, IoU, FPS  
   - **Fine-tuning**: Faster R-CNN with Albumentations augmentations + class-weighted loss
 
 - `segmentation/`  
-  - **Baseline scripts**: DeepLabV3-MobileNetV3, DeepLabV3-Resnet50, FCN-ResNet50  
-  - **Multi-model benchmark**: Evaluates mIoU, pixel acc, precision, recall, F1
-  - **Fine-tuning**: FCN-ResNet50 with small-object-aware augmentations, class imbalance handling
+  - **Baseline scripts**: DeepLabV3-MobileNetV3, DeepLabV3-ResNet50, FCN-ResNet50  
+  - **Multi-model benchmark**: Evaluates mIoU, Pixel Accuracy, Precision, Recall, F1  
+  - **Fine-tuning**: FCN-ResNet50 with small-object-aware augmentations and class imbalance handling
 
 - `requirements.txt`  
-  Lists dependencies 
+  Lists dependencies  
+
 ---
 
 ## Getting Started
@@ -32,36 +35,33 @@ This repository benchmarks and fine-tune the good model for **object detection**
 ### 1. Install dependencies
 ```bash
 pip install -r requirements.txt
+```
 
 ### 2. Run EDA
-
-Open the Jupyter notebook:
-``` bash
+```bash
 jupyter notebook data_exploration.ipynb
+```
 
 ### 3. Object Detection
-
-Baseline Benchmarking
-Edit dataset paths inside detection/multi_model_benchmark.py, then run:
+Edit dataset paths inside `detection/multi_model_benchmark.py`, then run:
 ```bash
 python detection/multi_model_benchmark.py
-
-Fine-tuning Faster R-CNN
-Edit dataset paths inside detection/faster_rcnn_finetune.py, then run:
+```
+For fine-tuning Faster R-CNN:
 ```bash
 python detection/faster_rcnn_finetune.py
+```
 
 ### 4. Semantic Segmentation
-
-Baseline Benchmarking
-Edit dataset paths inside segmentation/segmentation_benchmark.py, then run:
+Edit dataset paths inside `segmentation/segmentation_benchmark.py`, then run:
 ```bash
 python segmentation/segmentation_benchmark.py
-
-Fine-tuning FCN-ResNet50
-Edit dataset paths inside segmentation/fcn_resnet_finetuning.py, then run:
+```
+For fine-tuning FCN-ResNet50:
 ```bash
 python segmentation/fcn_resnet_finetuning.py
+```
+
 ---
 
 ## Highlights
@@ -81,7 +81,7 @@ python segmentation/fcn_resnet_finetuning.py
 	- Final metrics: mAP, IoU, Pixel Accuracy, F1, FPS
 	
 ## Reference
-	- BDD100K: A Diverse Driving Dataset for Heterogeneous Multitask Learning
+	- [BDD100K: A Diverse Driving Dataset for Heterogeneous Multitask Learning](https://arxiv.org/pdf/1805.04687)
 	- https://bair.berkeley.edu/blog/2018/05/30/bdd/
 	
 
